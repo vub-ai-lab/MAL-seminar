@@ -106,17 +106,17 @@ class DQNAgent(Agent):
         # since tf currently doesn't allow indexing with vector
         self.q_vals = tf.reduce_sum(self.q_net * act_one_hot, 1)
 
-        # squared error for batch
+        # squared errors for batch
         squared_error = (self.target_op - self.q_vals)**2
 
-        # take mean over batch to get cost
-        self.cost_op = tf.reduce_mean(squared_error, 0)
+        # take mean over batch to get loss
+        self.loss_op = tf.reduce_mean(squared_error, 0)
 
         # create train op
         optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
-        gvs = optimizer.compute_gradients(self.cost_op, self.q_vars)
+        grads_and_vars = optimizer.compute_gradients(self.loss_op, self.q_vars)
         clipped_gvs = [(tf.clip_by_value(grad, -5., 5.), var)
-                       for grad, var in gvs]
+                       for grad, var in grads_and_vars]
         self.train_op = optimizer.apply_gradients(clipped_gvs)
 
         # init op
@@ -150,7 +150,7 @@ class DQNAgent(Agent):
                          self.r: R,
                          self.t: T,
                          self.sp: Sp}
-            cost, _ = self.session.run([self.cost_op, self.train_op],
+            cost, _ = self.session.run([self.loss_op, self.train_op],
                                        feed_dict=feed_dict)
         # update target network
         if self.num_steps() % self.target_freq:
@@ -181,3 +181,99 @@ class DQNAgent(Agent):
         '''Get Q-values for input state'''
         inp = s.reshape(1, -1)  # inputs must be batch_size x dim
         return self.session.run(self.q_net, feed_dict={self.s: inp}).flatten()
+
+
+class DPGAgent(Agent):
+    '''
+    Policy Gradient agent
+    '''
+    def __init__(self, network_fn, num_actions, obs_shape, alpha=0.001,
+             gamma=.99):
+        super(DPGAgent, self).__init__(num_actions)
+        # store parameters
+        self.learning_rate = alpha
+        self.gamma = gamma
+
+        # construct placeholders for input batch
+        self.s = tf.placeholder("float", (None,)+obs_shape)
+        self.a = tf.placeholder("int32", (None,))
+        self.R = tf.placeholder("float", (None,))
+
+        # create policy network
+        self.policy_net = network_fn(self.s, self._n_actions)
+
+        #define pg loss
+
+        # note: need to reduce to single dimension because of tf
+        # indexing limitations
+        batch_size = tf.shape(self.policy_net)[0]
+        idx = tf.range(batch_size)
+        # probabilities of selected actions
+        probs = tf.gather(tf.reshape(self.policy_net, [-1]),
+                          idx * self.num_actions() + self.a)
+        # pg loss
+        self.loss_op = -tf.reduce_mean(tf.log(probs) * self.R)
+
+        # create train op
+        optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+        grads_and_vars = optimizer.compute_gradients(self.loss_op)
+        #no gradient processing for now
+        self.train_op = optimizer.apply_gradients(grads_and_vars)
+
+        # init op
+        init_op = tf.initialize_all_variables()
+
+        #buffers to store episode samples
+        self.ep_rew, self.ep_obs, self.ep_act= [],[],[]
+
+        #create tf sesion to run ops
+        self.session = tf.Session()
+
+        # initialize all variables
+        self.session.run(init_op)
+
+    def select_action(self, obs):
+        inp = obs.reshape((1, -1))  # inputs must be batch_size x dim
+        probs = self.session.run(self.policy_net, feed_dict={self.s:inp})
+        return np.random.choice(self.num_actions(), p=probs.flatten())
+
+    def get_returns(self, rewards, bootstrap=0.):
+        ''' Discounted episode returns
+
+        Calculate the discounted return (sum of discounted rewards) for every
+        step, given a stream of rewards.
+
+        Args:
+            rewards (iterable,float): rewards stream from t=0,...T
+            bootstrap (float, optional): bootstrap value (defaults to 0.). Can
+                be used to bootstrap with value of final state in case the
+                reward stream is cut off at non-terminal state.
+        Returns:
+            1d-array (float) cummulative discounted return for every step.
+            Same length as input rewards.
+        '''
+        result = np.zeros(np.size(rewards))
+        cumm_R = bootstrap
+        for idx in reversed(xrange(0,np.size(rewards))):
+            cumm_R = rewards[idx] + self.gamma * cumm_R
+            result[idx] = cumm_R
+        return result
+
+    def update(self, s, a, r, t):
+        super(DPGAgent, self).update(s, a, r, t)
+        if t: #terminal
+            # calculate episode discounted returns
+            ep_returns = self.get_returns(self.ep_rew)
+            # gather graph inputs
+            feed_dict = {self.s: np.array(self.ep_obs),
+                         self.a: np.array(self.ep_act),
+                         self.R: ep_returns}
+            # update policy network
+            self.session.run(self.train_op, feed_dict=feed_dict)
+            # clear buffers
+            self.ep_rew, self.ep_obs, self.ep_act= [],[],[]
+        else:
+            # simply store transition, don't update
+            self.ep_obs.append(s)
+            self.ep_act.append(a)
+            self.ep_rew.append(r)

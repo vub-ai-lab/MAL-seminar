@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class ReplayDB(object):
     ''' Database for storing transition samples
 
@@ -17,6 +18,7 @@ class ReplayDB(object):
 
     def __init__(self, shape, capacity=10000):
         self._capacity = capacity
+        # create buffers
         self._obs_array = np.zeros((capacity,)+shape, dtype=np.float)
         self._rew_array = np.zeros(self._capacity, dtype=np.float)
         self._term_array = np.zeros(self._capacity, dtype=np.bool)
@@ -61,12 +63,13 @@ class ReplayDB(object):
                 reward r, termination t and next state observation s'
         '''
         assert self.num_samples() >= batch_size, 'insufficient samples'
-        idx = np.random.choice(self.num_samples(),
+        idx = np.random.choice(self.num_samples()-1,
                                size=batch_size,
                                replace=False)
         # insertion ptr -1  is not a valid index since we don't have next state
         while np.any(idx == self._insert_ptr - 1):
-            idx[idx == self._insert_ptr - 1] = np.random.choice(self.num_samples())
+            idx[idx == self._insert_ptr - 1] = np.random.choice(
+                                                 self.num_samples())
         s = self._obs_array[idx, ]
         a = self._act_array[idx]
         r = self._rew_array[idx]

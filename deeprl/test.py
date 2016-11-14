@@ -30,7 +30,8 @@ def create_mlp(inputs, n_out):
 if __name__ == "__main__":
     env = gym.make('MountainCar-v0')
     n_actions = env.action_space.n
-    agent = DQNAgent(create_mlp, n_actions, env.observation_space.shape)
+    agent = DQNAgent(create_mlp, n_actions, env.observation_space.shape,
+                     min_replay_size=10000, batch_size=64)
     exp = Experiment(agent, env)
     exp.run_epoch(1000000)
     print agent.db.num_samples()
