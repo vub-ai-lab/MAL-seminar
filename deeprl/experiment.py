@@ -1,4 +1,5 @@
 import gym
+import numpy as np
 
 
 class Experiment(object):
@@ -8,13 +9,15 @@ class Experiment(object):
         agent (object): RL agent. Should implement select_action and update
                         methods.
         env (str or object): either gym env object or environment name.
+        phi (callable, optional): function to preprocess observations
     '''
-    def __init__(self, agent, env):
+    def __init__(self, agent, env, phi=None):
         if type(env) is str:
             self.env = gym.make(env)
         else:
             self.env = env
         self.agent = agent
+        self.phi = phi
 
     def run_episode(self, max_steps=0):
         ''' run a single episode
@@ -36,6 +39,8 @@ class Experiment(object):
         while not done:
             a = self.agent.select_action(obs)
             obs_n, rew, done, _ = self.env.step(a)
+            if self.phi:
+                obs = self.phi(obs)
             self.agent.update(obs, a, rew, done)
             steps += 1
             obs = obs_n
@@ -43,7 +48,7 @@ class Experiment(object):
             if 0 < max_steps <= steps:
                 break
         print "episode reward: %f" % reward
-        return steps
+        return steps, reward
 
     def run_epoch(self, num_steps=50000):
         ''' Run environment for fixed number of steps (epoch)
@@ -54,8 +59,11 @@ class Experiment(object):
         '''
         steps_left = num_steps
         num_eps = 0
+        rewards = []
         while steps_left > 0:
-            steps = self.run_episode(steps_left)
+            steps, rew = self.run_episode(steps_left)
+            rewards.append(rew)
             steps_left -= steps
             num_eps += 1
-        return num_eps
+        print "ran %i episodes, avg reward: %f" % (num_eps, np.mean(rewards))
+        return rewards
