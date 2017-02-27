@@ -120,7 +120,7 @@ class DQNAgent(Agent):
         self.train_op = optimizer.apply_gradients(clipped_gvs)
 
         # init op
-        init_op = tf.initialize_all_variables()
+        init_op = tf.global_variables_initializer()
 
         # create a tensorflow session to run ops in
         self.session = tf.Session()
@@ -221,7 +221,7 @@ class DPGAgent(Agent):
         self.train_op = optimizer.apply_gradients(grads_and_vars)
 
         # init op
-        init_op = tf.initialize_all_variables()
+        init_op = tf.global_variables_initializer()
 
         #buffers to store episode samples
         self.ep_rew, self.ep_obs, self.ep_act= [],[],[]
